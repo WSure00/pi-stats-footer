@@ -5,7 +5,7 @@ import type {
 	ExtensionAPI,
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import { sliceByColumn, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 type UsageTotals = Pick<
 	Usage,
@@ -227,13 +227,14 @@ export default function statsFooter(pi: ExtensionAPI) {
 					);
 
 					const arrow = theme.fg("accent", "->");
-					let taskBody = lastTask || "*";
-					if (visibleWidth(taskBody) > 60) {
-						taskBody = `${sliceByColumn(taskBody, 0, 57)}...`;
-					}
+					const taskBudget = Math.max(0, width - visibleWidth(arrow) - 1);
+					const taskBody = truncateToWidth(lastTask || "*", taskBudget, "...");
 					const progressLine = `${arrow} ${theme.fg("dim", taskBody)}`;
 
-					return [statsLine, progressLine];
+					// Safety net: never return a line wider than the terminal.
+					return [statsLine, progressLine].map((line) =>
+						truncateToWidth(line, width, ""),
+					);
 				},
 			};
 		});
