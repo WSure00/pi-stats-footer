@@ -23,7 +23,7 @@ task Refactor the payment module…
 From git:
 
 ```bash
-pi install git:github.com/YOUR_USER/pi-stats-footer
+pi install git:github.com/WSure00/pi-stats-footer
 ```
 
 From a local clone:
