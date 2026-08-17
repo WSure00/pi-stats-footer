@@ -2,7 +2,7 @@
 
 A compact, responsive two-line status footer for [pi](https://pi.dev).
 
-```
+```text
 Claude · high │ ↑20k ↓1.5k │ cache 90% │ ctx 16%/1M │ $0.13 │ working 5s
 task Refactor the payment module…
 ```
