@@ -5,7 +5,7 @@ import type {
 	ExtensionAPI,
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { sliceByColumn, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 type UsageTotals = Pick<
 	Usage,
@@ -15,6 +15,16 @@ type UsageTotals = Pick<
 };
 
 type RenderTui = { requestRender(force?: boolean): void };
+
+const THINKING_THEME_COLOR = {
+	off: "thinkingOff",
+	minimal: "thinkingMinimal",
+	low: "thinkingLow",
+	medium: "thinkingMedium",
+	high: "thinkingHigh",
+	xhigh: "thinkingXhigh",
+	max: "thinkingMax",
+} as const;
 
 export function formatTokens(count: number): string {
 	if (count < 1_000) return String(count);
@@ -186,9 +196,20 @@ export default function statsFooter(pi: ExtensionAPI) {
 					const separator = theme.fg("borderMuted", " │ ");
 					const elapsed =
 						runStart === null ? lastRunDuration : Date.now() - runStart;
+					const thinkingColor =
+						THINKING_THEME_COLOR[
+							thinkingLevel as keyof typeof THINKING_THEME_COLOR
+						] ?? "thinkingMedium";
+					let thinkingText: string;
+					try {
+						thinkingText = `* ${theme.fg(thinkingColor, thinkingLevel)}`;
+					} catch {
+						// thinkingMax is optional in themes; fall back to a vivid level.
+						thinkingText = `* ${theme.fg("thinkingHigh", thinkingLevel)}`;
+					}
 					const statsLine = fitSegments(
 						[
-							`${theme.fg("accent", modelName)} ${theme.fg("success", `· ${thinkingLevel}`)}`,
+							`${theme.fg("accent", modelName)} ${thinkingText}`,
 							theme.fg(
 								"dim",
 								`↑${formatTokens(usage.input)} ↓${formatTokens(usage.output)}`,
@@ -205,8 +226,12 @@ export default function statsFooter(pi: ExtensionAPI) {
 						width,
 					);
 
-					const taskText = lastTask ? `task ${lastTask}` : "task -";
-					const progressLine = truncateToWidth(theme.fg("dim", taskText), 60, "...");
+					const arrow = theme.fg("accent", "->");
+					let taskBody = lastTask || "*";
+					if (visibleWidth(taskBody) > 60) {
+						taskBody = `${sliceByColumn(taskBody, 0, 57)}...`;
+					}
+					const progressLine = `${arrow} ${theme.fg("dim", taskBody)}`;
 
 					return [statsLine, progressLine];
 				},
