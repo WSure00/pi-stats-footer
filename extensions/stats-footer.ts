@@ -131,8 +131,15 @@ function fitSegments(
 	separator: string,
 	width: number,
 ): string {
-	const fitted: string[] = [];
-	for (const segment of segments) {
+	if (width <= 0 || segments.length === 0) return "";
+	// The first segment (model + thinking level) has top priority. If it
+	// alone is wider than the terminal, show a truncated prefix of it
+	// instead of skipping it in favor of lower-priority segments.
+	if (visibleWidth(segments[0]) > width) {
+		return truncateToWidth(segments[0], width, "...");
+	}
+	const fitted: string[] = [segments[0]];
+	for (const segment of segments.slice(1)) {
 		const candidate = joinSegments([...fitted, segment], separator);
 		if (visibleWidth(candidate) <= width) fitted.push(segment);
 	}
