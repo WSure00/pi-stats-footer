@@ -8,6 +8,7 @@ turn count and the current task — all at a glance while pi works.
 Claude Sonnet · high │ ↑20.4k ↓1.5k │ cache 90% │ ctx 16%/1M │ $0.13 │ working 0:05
 -> turn 3 │ Refactor the payment module to use the new billing API…
 ```
+<img width="1274" height="96" alt="image" src="https://github.com/user-attachments/assets/c2919cc3-3268-40b5-8851-a13686891f53" />
 
 ## Features
 
