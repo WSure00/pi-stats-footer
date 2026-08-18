@@ -39,9 +39,10 @@ export function formatDuration(ms: number): string {
 	const hours = Math.floor(totalSeconds / 3_600);
 	const minutes = Math.floor((totalSeconds % 3_600) / 60);
 	const seconds = totalSeconds % 60;
-	if (hours > 0) return `${hours}h${minutes}m${seconds}s`;
-	if (minutes > 0) return `${minutes}m${seconds}s`;
-	return `${seconds}s`;
+	const pad = (n: number): string => String(n).padStart(2, "0");
+	// Clock style: 1:02:03 = 1h 2m 3s; below one hour M:SS, e.g. 2:01.
+	if (hours > 0) return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+	return `${minutes}:${pad(seconds)}`;
 }
 
 function emptyUsageTotals(): UsageTotals {
@@ -177,7 +178,11 @@ export default function statsFooter(pi: ExtensionAPI) {
 		runStart = null;
 		lastRunDuration = 0;
 		promptTurnBase = null;
-		lastTask = findLastUserTask(ctx.sessionManager.getBranch() as SessionEntry[]);
+		try {
+			lastTask = findLastUserTask(ctx.sessionManager.getBranch() as SessionEntry[]);
+		} catch {
+			lastTask = "";
+		}
 		if (ctx.mode !== "tui") return;
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
@@ -193,88 +198,94 @@ export default function statsFooter(pi: ExtensionAPI) {
 				invalidate() {},
 				render(width: number): string[] {
 					if (width <= 0) return [];
-					const entries = ctx.sessionManager.getEntries() as SessionEntry[];
-					const { usage } = collectSessionStats(entries);
-					const cacheRate = calculateCacheHitRate(usage);
-					const context = ctx.getContextUsage();
-					const contextWindow =
-						context?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-					const contextPercent = context?.percent ?? null;
-
-					let contextColor: "dim" | "success" | "warning" | "error" = "dim";
-					if (contextPercent !== null) {
-						if (contextPercent >= 80) contextColor = "error";
-						else if (contextPercent >= 60) contextColor = "warning";
-						else contextColor = "success";
-					}
-
-					const modelName = ctx.model?.name || ctx.model?.id || "no-model";
-					const thinkingLevel = ctx.thinkingLevel || "off";
-					const contextText =
-						contextPercent === null
-							? `ctx ?/${formatTokens(contextWindow)}`
-							: `ctx ${contextPercent.toFixed(0)}%/${formatTokens(contextWindow)}`;
-					const separator = theme.fg("borderMuted", " │ ");
-					const elapsed =
-						runStart === null ? lastRunDuration : Date.now() - runStart;
-					const thinkingColor =
-						THINKING_THEME_COLOR[
-							thinkingLevel as keyof typeof THINKING_THEME_COLOR
-						] ?? "thinkingMedium";
-					let thinkingText: string;
 					try {
-						thinkingText = `* ${theme.fg(thinkingColor, thinkingLevel)}`;
+						const entries = ctx.sessionManager.getEntries() as SessionEntry[];
+						const { usage } = collectSessionStats(entries);
+						const cacheRate = calculateCacheHitRate(usage);
+						const context = ctx.getContextUsage();
+						const contextWindow =
+							context?.contextWindow ?? ctx.model?.contextWindow ?? 0;
+						const contextPercent = context?.percent ?? null;
+	
+						let contextColor: "dim" | "success" | "warning" | "error" = "dim";
+						if (contextPercent !== null) {
+							if (contextPercent >= 80) contextColor = "error";
+							else if (contextPercent >= 60) contextColor = "warning";
+							else contextColor = "success";
+						}
+	
+						const modelName = ctx.model?.name || ctx.model?.id || "no-model";
+						const thinkingLevel = ctx.thinkingLevel || "off";
+						const contextText =
+							contextPercent === null
+								? `ctx ?/${formatTokens(contextWindow)}`
+								: `ctx ${contextPercent.toFixed(0)}%/${formatTokens(contextWindow)}`;
+						const separator = theme.fg("borderMuted", " │ ");
+						const elapsed =
+							runStart === null ? lastRunDuration : Date.now() - runStart;
+						const thinkingColor =
+							THINKING_THEME_COLOR[
+								thinkingLevel as keyof typeof THINKING_THEME_COLOR
+							] ?? "thinkingMedium";
+						let thinkingText: string;
+						try {
+							thinkingText = `* ${theme.fg(thinkingColor, thinkingLevel)}`;
+						} catch {
+							// thinkingMax is optional in themes; fall back to a vivid level.
+							thinkingText = `* ${theme.fg("thinkingHigh", thinkingLevel)}`;
+						}
+						const statsLine = fitSegments(
+							[
+								`${theme.fg("accent", modelName)} ${thinkingText}`,
+								theme.fg(
+									"dim",
+									`↑${formatTokens(usage.input)} ↓${formatTokens(usage.output)}`,
+								),
+								theme.fg(
+									"dim",
+									`cache ${cacheRate === null ? "-" : `${cacheRate.toFixed(0)}%`}`,
+								),
+								theme.fg(contextColor, contextText),
+								theme.fg("dim", `$${usage.cost.toFixed(usage.cost < 1 ? 3 : 2)}`),
+								theme.fg("accent", `working ${formatDuration(elapsed)}`),
+							],
+							separator,
+							width,
+						);
+	
+						// Current turn: the prompt submitted at before_agent_start is
+						// only persisted to the session later, so until then bump the
+						// branch count by one.
+						const branch = ctx.sessionManager.getBranch() as SessionEntry[];
+						const branchTurns = countUserTurns(branch);
+						const turnNumber =
+							promptTurnBase === null
+								? branchTurns
+								: Math.max(branchTurns, promptTurnBase + 1);
+	
+						const arrow = theme.fg("accent", "->");
+						const turnSegment = theme.fg("accent", `turn ${turnNumber}`);
+						const turnSeparator = theme.fg("borderMuted", " │ ");
+						const taskBudget = Math.max(
+							0,
+							width -
+								(visibleWidth(arrow) +
+									1 +
+									visibleWidth(turnSegment) +
+									visibleWidth(turnSeparator)),
+						);
+						const taskBody = truncateToWidth(lastTask || "*", taskBudget, "...");
+						const progressLine = `${arrow} ${turnSegment}${turnSeparator}${theme.fg("dim", taskBody)}`;
+	
+						// Safety net: never return a line wider than the terminal.
+						return [statsLine, progressLine].map((line) =>
+							truncateToWidth(line, width, ""),
+						);
 					} catch {
-						// thinkingMax is optional in themes; fall back to a vivid level.
-						thinkingText = `* ${theme.fg("thinkingHigh", thinkingLevel)}`;
+						// Footer rendering must never crash the TUI, even on very
+						// narrow terminals or unexpected context shapes.
+						return [];
 					}
-					const statsLine = fitSegments(
-						[
-							`${theme.fg("accent", modelName)} ${thinkingText}`,
-							theme.fg(
-								"dim",
-								`↑${formatTokens(usage.input)} ↓${formatTokens(usage.output)}`,
-							),
-							theme.fg(
-								"dim",
-								`cache ${cacheRate === null ? "-" : `${cacheRate.toFixed(0)}%`}`,
-							),
-							theme.fg(contextColor, contextText),
-							theme.fg("dim", `$${usage.cost.toFixed(usage.cost < 1 ? 3 : 2)}`),
-							theme.fg("accent", `working ${formatDuration(elapsed)}`),
-						],
-						separator,
-						width,
-					);
-
-					// Current turn: the prompt submitted at before_agent_start is
-					// only persisted to the session later, so until then bump the
-					// branch count by one.
-					const branch = ctx.sessionManager.getBranch() as SessionEntry[];
-					const branchTurns = countUserTurns(branch);
-					const turnNumber =
-						promptTurnBase === null
-							? branchTurns
-							: Math.max(branchTurns, promptTurnBase + 1);
-
-					const arrow = theme.fg("accent", "->");
-					const turnSegment = theme.fg("accent", `turn ${turnNumber}`);
-					const turnSeparator = theme.fg("borderMuted", " │ ");
-					const taskBudget = Math.max(
-						0,
-						width -
-							(visibleWidth(arrow) +
-								1 +
-								visibleWidth(turnSegment) +
-								visibleWidth(turnSeparator)),
-					);
-					const taskBody = truncateToWidth(lastTask || "*", taskBudget, "...");
-					const progressLine = `${arrow} ${turnSegment}${turnSeparator}${theme.fg("dim", taskBody)}`;
-
-					// Safety net: never return a line wider than the terminal.
-					return [statsLine, progressLine].map((line) =>
-						truncateToWidth(line, width, ""),
-					);
 				},
 			};
 		});
@@ -289,9 +300,13 @@ export default function statsFooter(pi: ExtensionAPI) {
 	});
 	pi.on("before_agent_start", (event, ctx) => {
 		lastTask = sanitizeStatusText(event.prompt);
-		promptTurnBase = countUserTurns(
-			ctx.sessionManager.getBranch() as SessionEntry[],
-		);
+		try {
+			promptTurnBase = countUserTurns(
+				ctx.sessionManager.getBranch() as SessionEntry[],
+			);
+		} catch {
+			promptTurnBase = null;
+		}
 		rerender();
 	});
 	pi.on("agent_settled", () => {
