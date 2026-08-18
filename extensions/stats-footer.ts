@@ -122,6 +122,15 @@ function findLastUserTask(entries: readonly SessionEntry[]): string {
 	return "";
 }
 
+/** Conversation turn count = number of user messages on the branch. */
+export function countUserTurns(entries: readonly SessionEntry[]): number {
+	let count = 0;
+	for (const entry of entries) {
+		if (entry.type === "message" && entry.message.role === "user") count++;
+	}
+	return count;
+}
+
 function joinSegments(segments: string[], separator: string): string {
 	return segments.filter(Boolean).join(separator);
 }
@@ -152,6 +161,10 @@ export default function statsFooter(pi: ExtensionAPI) {
 	let runStart: number | null = null;
 	let lastRunDuration = 0;
 	let lastTask = "";
+	// User-turn count on the branch at before_agent_start time. Set while a
+	// freshly submitted prompt has not been persisted to the session yet, so
+	// the footer can already show it as the current turn. Null when idle.
+	let promptTurnBase: number | null = null;
 
 	const rerender = () => tuiRef?.requestRender();
 	const stopTimer = () => {
@@ -163,6 +176,7 @@ export default function statsFooter(pi: ExtensionAPI) {
 		stopTimer();
 		runStart = null;
 		lastRunDuration = 0;
+		promptTurnBase = null;
 		lastTask = findLastUserTask(ctx.sessionManager.getBranch() as SessionEntry[]);
 		if (ctx.mode !== "tui") return;
 
@@ -233,10 +247,29 @@ export default function statsFooter(pi: ExtensionAPI) {
 						width,
 					);
 
+					// Current turn: the prompt submitted at before_agent_start is
+					// only persisted to the session later, so until then bump the
+					// branch count by one.
+					const branch = ctx.sessionManager.getBranch() as SessionEntry[];
+					const branchTurns = countUserTurns(branch);
+					const turnNumber =
+						promptTurnBase === null
+							? branchTurns
+							: Math.max(branchTurns, promptTurnBase + 1);
+
 					const arrow = theme.fg("accent", "->");
-					const taskBudget = Math.max(0, width - visibleWidth(arrow) - 1);
+					const turnSegment = theme.fg("accent", `turn ${turnNumber}`);
+					const turnSeparator = theme.fg("borderMuted", " │ ");
+					const taskBudget = Math.max(
+						0,
+						width -
+							(visibleWidth(arrow) +
+								1 +
+								visibleWidth(turnSegment) +
+								visibleWidth(turnSeparator)),
+					);
 					const taskBody = truncateToWidth(lastTask || "*", taskBudget, "...");
-					const progressLine = `${arrow} ${theme.fg("dim", taskBody)}`;
+					const progressLine = `${arrow} ${turnSegment}${turnSeparator}${theme.fg("dim", taskBody)}`;
 
 					// Safety net: never return a line wider than the terminal.
 					return [statsLine, progressLine].map((line) =>
@@ -254,13 +287,19 @@ export default function statsFooter(pi: ExtensionAPI) {
 		timer = setInterval(rerender, 1_000);
 		rerender();
 	});
-	pi.on("before_agent_start", (event) => {
+	pi.on("before_agent_start", (event, ctx) => {
 		lastTask = sanitizeStatusText(event.prompt);
+		promptTurnBase = countUserTurns(
+			ctx.sessionManager.getBranch() as SessionEntry[],
+		);
 		rerender();
 	});
 	pi.on("agent_settled", () => {
 		if (runStart !== null) lastRunDuration = Date.now() - runStart;
 		runStart = null;
+		// The submitted user message is persisted by now; the branch count is
+		// accurate again.
+		promptTurnBase = null;
 		stopTimer();
 		rerender();
 	});
@@ -269,6 +308,7 @@ export default function statsFooter(pi: ExtensionAPI) {
 		tuiRef = null;
 		runStart = null;
 		lastRunDuration = 0;
+		promptTurnBase = null;
 	});
 	pi.on("message_end", rerender);
 	pi.on("thinking_level_select", rerender);
