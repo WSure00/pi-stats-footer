@@ -1,7 +1,7 @@
 {
   "name": "pi-stats-footer",
-  "version": "0.2.1",
-  "description": "Compact two-line status footer for pi: model, tokens, cache hit rate, context usage, cost, run timer and current task.",
+  "version": "0.3.0",
+  "description": "Compact two-line status footer for pi: model, tokens, cache hit rate, context usage, cost, run timer, turn count and current task.",
   "keywords": [
     "pi-package",
     "pi",
@@ -19,6 +19,9 @@
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
   },
   "pi": {
     "extensions": ["extensions"]
