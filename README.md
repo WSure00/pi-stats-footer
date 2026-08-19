@@ -36,6 +36,12 @@ Claude Sonnet · high │ ↑20.4k ↓1.5k │ cache 90% │ ctx 16%/1M │ $0.1
   priority order (model first); lower-priority segments drop out gracefully on
   narrow terminals instead of wrapping. The model segment is hard-truncated
   with `…` only if it alone is wider than the terminal.
+- **Ambiguous-width safe** — East Asian *Ambiguous* characters (`│`, `↑`, `↓`,
+  `·`, `—`, `…`, `“ ”` …) are measured as **2 columns** and one extra column of
+  margin is reserved. CJK terminals/fonts often render these double-width even
+  though `wcwidth` counts them as 1; measuring them narrowly made fitted lines
+  wrap onto a third row and clobber the tmux status bar. The conservative
+  sizing only ever leaves a little unused space at the right edge.
 - **Live updates** — re-renders on branch changes, messages, model/thinking
   level switches and session info changes, plus a 1s ticker while the agent
   runs.

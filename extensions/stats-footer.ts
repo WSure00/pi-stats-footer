@@ -132,6 +132,101 @@ export function countUserTurns(entries: readonly SessionEntry[]): number {
 	return count;
 }
 
+/**
+ * East Asian Ambiguous code point ranges (inclusive [start, end] pairs),
+ * flat. Derived from the Unicode EastAsianWidth=A property (same data set
+ * used by get-east-asian-width). Many CJK terminals and fonts render these
+ * as double-width while wcwidth-style helpers count them as 1 column.
+ */
+const AMBIGUOUS_RANGES: readonly number[] = [
+	161, 161, 164, 164, 167, 168, 170, 170, 173, 174, 176, 180,
+	182, 186, 188, 191, 198, 198, 208, 208, 215, 216, 222, 225,
+	230, 230, 232, 234, 236, 237, 240, 240, 242, 243, 247, 250,
+	252, 252, 254, 254, 257, 257, 273, 273, 275, 275, 283, 283,
+	294, 295, 299, 299, 305, 307, 312, 312, 319, 322, 324, 324,
+	328, 331, 333, 333, 338, 339, 358, 359, 363, 363, 462, 462,
+	464, 464, 466, 466, 468, 468, 470, 470, 472, 472, 474, 474,
+	476, 476, 593, 593, 609, 609, 708, 708, 711, 711, 713, 715,
+	717, 717, 720, 720, 728, 731, 733, 733, 735, 735, 768, 879,
+	913, 929, 931, 937, 945, 961, 963, 969, 1025, 1025, 1040, 1103,
+	1105, 1105, 8208, 8208, 8211, 8214, 8216, 8217, 8220, 8221, 8224, 8226,
+	8228, 8231, 8240, 8240, 8242, 8243, 8245, 8245, 8251, 8251, 8254, 8254,
+	8308, 8308, 8319, 8319, 8321, 8324, 8364, 8364, 8451, 8451, 8453, 8453,
+	8457, 8457, 8467, 8467, 8470, 8470, 8481, 8482, 8486, 8486, 8491, 8491,
+	8531, 8532, 8539, 8542, 8544, 8555, 8560, 8569, 8585, 8585, 8592, 8601,
+	8632, 8633, 8658, 8658, 8660, 8660, 8679, 8679, 8704, 8704, 8706, 8707,
+	8711, 8712, 8715, 8715, 8719, 8719, 8721, 8721, 8725, 8725, 8730, 8730,
+	8733, 8736, 8739, 8739, 8741, 8741, 8743, 8748, 8750, 8750, 8756, 8759,
+	8764, 8765, 8776, 8776, 8780, 8780, 8786, 8786, 8800, 8801, 8804, 8807,
+	8810, 8811, 8814, 8815, 8834, 8835, 8838, 8839, 8853, 8853, 8857, 8857,
+	8869, 8869, 8895, 8895, 8978, 8978, 9312, 9449, 9451, 9547, 9552, 9587,
+	9600, 9615, 9618, 9621, 9632, 9633, 9635, 9641, 9650, 9651, 9654, 9655,
+	9660, 9661, 9664, 9665, 9670, 9672, 9675, 9675, 9678, 9681, 9698, 9701,
+	9711, 9711, 9733, 9734, 9737, 9737, 9742, 9743, 9756, 9756, 9758, 9758,
+	9792, 9792, 9794, 9794, 9824, 9825, 9827, 9829, 9831, 9834, 9836, 9837,
+	9839, 9839, 9886, 9887, 9919, 9919, 9926, 9933, 9935, 9939, 9941, 9953,
+	9955, 9955, 9960, 9961, 9963, 9969, 9972, 9972, 9974, 9977, 9979, 9980,
+	9982, 9983, 10045, 10045, 10102, 10111, 11094, 11097, 12872, 12879, 57344, 63743,
+	65024, 65039, 65533, 65533, 127232, 127242, 127248, 127277, 127280, 127337, 127344, 127373,
+	127375, 127376, 127387, 127404, 917760, 917999, 983040, 1048573, 1048576, 1114109,
+];
+
+function isAmbiguousCodePoint(cp: number): boolean {
+	let lo = 0;
+	let hi = AMBIGUOUS_RANGES.length / 2 - 1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		const start = AMBIGUOUS_RANGES[mid * 2]!;
+		const end = AMBIGUOUS_RANGES[mid * 2 + 1]!;
+		if (cp < start) hi = mid - 1;
+		else if (cp > end) lo = mid + 1;
+		else return true;
+	}
+	return false;
+}
+
+/** Extra columns a CJK terminal may add for ambiguous-width characters. */
+function ambiguousExtraWidth(str: string): number {
+	let extra = 0;
+	for (const ch of str) {
+		const cp = ch.codePointAt(0)!;
+		if (cp >= 161 && isAmbiguousCodePoint(cp)) extra += 1;
+	}
+	return extra;
+}
+
+/**
+ * Conservative terminal width: like visibleWidth(), but East Asian
+ * Ambiguous characters (│ ↑ ↓ · — … “ ” etc.) count as 2 columns.
+ * Terminals/fonts in CJK locales frequently render them double-width;
+ * counting them narrowly is what makes a "fitted" footer line wrap onto
+ * an extra row and scroll the pane (clobbering the tmux status bar).
+ */
+export function measureWidth(str: string): number {
+	return visibleWidth(str) + ambiguousExtraWidth(str);
+}
+
+/**
+ * truncateToWidth(), but re-trims until the *conservative* width fits,
+ * so the result never wraps even on ambiguous-wide terminals.
+ */
+export function truncateSafe(
+	str: string,
+	maxWidth: number,
+	ellipsis = "...",
+): string {
+	let out = truncateToWidth(str, maxWidth, ellipsis);
+	let budget = maxWidth;
+	while (measureWidth(out) > maxWidth && budget > 0) {
+		budget -= 1;
+		out = truncateToWidth(str, budget, ellipsis);
+	}
+	return out;
+}
+
+/** Extra column reserved at the right edge to absorb font quirks. */
+const SAFETY_MARGIN = 1;
+
 function joinSegments(segments: string[], separator: string): string {
 	return segments.filter(Boolean).join(separator);
 }
@@ -145,15 +240,15 @@ function fitSegments(
 	// The first segment (model + thinking level) has top priority. If it
 	// alone is wider than the terminal, show a truncated prefix of it
 	// instead of skipping it in favor of lower-priority segments.
-	if (visibleWidth(segments[0]) > width) {
-		return truncateToWidth(segments[0], width, "...");
+	if (measureWidth(segments[0]!) > width) {
+		return truncateSafe(segments[0], width, "...");
 	}
-	const fitted: string[] = [segments[0]];
+	const fitted: string[] = [segments[0]!];
 	for (const segment of segments.slice(1)) {
 		const candidate = joinSegments([...fitted, segment], separator);
-		if (visibleWidth(candidate) <= width) fitted.push(segment);
+		if (measureWidth(candidate) <= width) fitted.push(segment);
 	}
-	return truncateToWidth(joinSegments(fitted, separator), width, "");
+	return truncateSafe(joinSegments(fitted, separator), width, "");
 }
 
 export default function statsFooter(pi: ExtensionAPI) {
@@ -250,7 +345,7 @@ export default function statsFooter(pi: ExtensionAPI) {
 								theme.fg("accent", `working ${formatDuration(elapsed)}`),
 							],
 							separator,
-							width,
+							Math.max(0, width - SAFETY_MARGIN),
 						);
 	
 						// Current turn: the prompt submitted at before_agent_start is
@@ -268,18 +363,19 @@ export default function statsFooter(pi: ExtensionAPI) {
 						const turnSeparator = theme.fg("borderMuted", " │ ");
 						const taskBudget = Math.max(
 							0,
-							width -
-								(visibleWidth(arrow) +
+							Math.max(0, width - SAFETY_MARGIN) -
+								(measureWidth(arrow) +
 									1 +
-									visibleWidth(turnSegment) +
-									visibleWidth(turnSeparator)),
+									measureWidth(turnSegment) +
+									measureWidth(turnSeparator)),
 						);
-						const taskBody = truncateToWidth(lastTask || "*", taskBudget, "...");
+						const taskBody = truncateSafe(lastTask || "*", taskBudget, "...");
 						const progressLine = `${arrow} ${turnSegment}${turnSeparator}${theme.fg("dim", taskBody)}`;
-	
-						// Safety net: never return a line wider than the terminal.
+
+						// Safety net: never return a line wider than the terminal,
+						// counting ambiguous-width characters conservatively.
 						return [statsLine, progressLine].map((line) =>
-							truncateToWidth(line, width, ""),
+							truncateSafe(line, width, ""),
 						);
 					} catch {
 						// Footer rendering must never crash the TUI, even on very
