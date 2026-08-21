@@ -1,7 +1,7 @@
 {
   "name": "pi-stats-footer",
-  "version": "0.3.2",
-  "description": "Compact two-line status footer for pi: model, tokens, cache hit rate, context usage, cost, run timer, turn count and current task.",
+  "version": "0.4.0",
+  "description": "Compact two-line status footer for pi: model, tokens, cache hit rate, context usage, cost, run timer, agent loop count and current task.",
   "keywords": [
     "pi-package",
     "pi",

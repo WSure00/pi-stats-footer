@@ -2,11 +2,11 @@
 
 A compact, responsive **two-line status footer** for [pi](https://pi.dev).
 It shows model, tokens, cache hit rate, context usage, cost, run timer,
-turn count and the current task — all at a glance while pi works.
+agent loop count and the current task — all at a glance while pi works.
 
 ```text
 Claude Sonnet · high │ ↑20.4k ↓1.5k │ cache 90% │ ctx 16%/1M │ $0.13 │ working 0:05
--> turn 3 │ Refactor the payment module to use the new billing API…
+-> loop 3 │ Refactor the payment module to use the new billing API…
 ```
 <img width="1274" height="96" alt="image" src="https://github.com/user-attachments/assets/c2919cc3-3268-40b5-8851-a13686891f53" />
 
@@ -27,7 +27,7 @@ Claude Sonnet · high │ ↑20.4k ↓1.5k │ cache 90% │ ctx 16%/1M │ $0.1
 
 | Segment | Example | Description |
 | --- | --- | --- |
-| Turn count | `-> turn 3` | Number of user messages on the current branch. Already counts the prompt you just submitted, even before it is persisted to the session. |
+| Loop count | `-> loop 3` | Agent turns taken so far on the current branch — one per assistant message, i.e. one LLM response plus its tool calls. Updates live while the agent works. |
 | Current task | `Refactor the payment…` | Your last user message, sanitized to a single line and truncated with `…` to fit the terminal width. |
 
 ### Behavior
@@ -53,7 +53,7 @@ Claude Sonnet · high │ ↑20.4k ↓1.5k │ cache 90% │ ctx 16%/1M │ $0.1
 
 The footer uses your pi theme; no hard-coded colors:
 
-- **Model name, `->`, `turn N`, `working` timer** — `accent`
+- **Model name, `->`, `loop N`, `working` timer** — `accent`
 - **Tokens, cache rate, cost, task text** — `dim`
 - **Separators (` │ `)** — `borderMuted`
 - **Thinking level** — `thinkingOff` / `thinkingMinimal` / `thinkingLow` /

@@ -123,11 +123,11 @@ function findLastUserTask(entries: readonly SessionEntry[]): string {
 	return "";
 }
 
-/** Conversation turn count = number of user messages on the branch. */
-export function countUserTurns(entries: readonly SessionEntry[]): number {
+/** Agent turn count = number of assistant messages on the branch. */
+export function countAgentTurns(entries: readonly SessionEntry[]): number {
 	let count = 0;
 	for (const entry of entries) {
-		if (entry.type === "message" && entry.message.role === "user") count++;
+		if (entry.type === "message" && entry.message.role === "assistant") count++;
 	}
 	return count;
 }
@@ -257,10 +257,6 @@ export default function statsFooter(pi: ExtensionAPI) {
 	let runStart: number | null = null;
 	let lastRunDuration = 0;
 	let lastTask = "";
-	// User-turn count on the branch at before_agent_start time. Set while a
-	// freshly submitted prompt has not been persisted to the session yet, so
-	// the footer can already show it as the current turn. Null when idle.
-	let promptTurnBase: number | null = null;
 
 	const rerender = () => tuiRef?.requestRender();
 	const stopTimer = () => {
@@ -272,7 +268,6 @@ export default function statsFooter(pi: ExtensionAPI) {
 		stopTimer();
 		runStart = null;
 		lastRunDuration = 0;
-		promptTurnBase = null;
 		try {
 			lastTask = findLastUserTask(ctx.sessionManager.getBranch() as SessionEntry[]);
 		} catch {
@@ -348,18 +343,13 @@ export default function statsFooter(pi: ExtensionAPI) {
 							Math.max(0, width - SAFETY_MARGIN),
 						);
 	
-						// Current turn: the prompt submitted at before_agent_start is
-						// only persisted to the session later, so until then bump the
-						// branch count by one.
+						// Agent turns: one per assistant message (each turn = one LLM
+						// response plus its tool calls). Updated live as messages land.
 						const branch = ctx.sessionManager.getBranch() as SessionEntry[];
-						const branchTurns = countUserTurns(branch);
-						const turnNumber =
-							promptTurnBase === null
-								? branchTurns
-								: Math.max(branchTurns, promptTurnBase + 1);
+						const turnNumber = countAgentTurns(branch);
 	
 						const arrow = theme.fg("accent", "->");
-						const turnSegment = theme.fg("accent", `turn ${turnNumber}`);
+						const turnSegment = theme.fg("accent", `loop ${turnNumber}`);
 						const turnSeparator = theme.fg("borderMuted", " │ ");
 						const taskBudget = Math.max(
 							0,
@@ -394,23 +384,13 @@ export default function statsFooter(pi: ExtensionAPI) {
 		timer = setInterval(rerender, 1_000);
 		rerender();
 	});
-	pi.on("before_agent_start", (event, ctx) => {
+	pi.on("before_agent_start", (event) => {
 		lastTask = sanitizeStatusText(event.prompt);
-		try {
-			promptTurnBase = countUserTurns(
-				ctx.sessionManager.getBranch() as SessionEntry[],
-			);
-		} catch {
-			promptTurnBase = null;
-		}
 		rerender();
 	});
 	pi.on("agent_settled", () => {
 		if (runStart !== null) lastRunDuration = Date.now() - runStart;
 		runStart = null;
-		// The submitted user message is persisted by now; the branch count is
-		// accurate again.
-		promptTurnBase = null;
 		stopTimer();
 		rerender();
 	});
@@ -419,7 +399,6 @@ export default function statsFooter(pi: ExtensionAPI) {
 		tuiRef = null;
 		runStart = null;
 		lastRunDuration = 0;
-		promptTurnBase = null;
 	});
 	pi.on("message_end", rerender);
 	pi.on("thinking_level_select", rerender);
